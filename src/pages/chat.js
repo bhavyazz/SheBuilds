@@ -18,16 +18,21 @@ const STARTERS = [
 export function renderChat(root) {
   root.innerHTML = `<div class="chat-container" id="chat-container"></div>`;
 
+  // If navigated from insights "Discuss with AI" button, force send context
+  if (window.NyayaState?.sendToChat) {
+    window.NyayaState.sendToChat = false;
+    contextApplied = false;
+    messages = [];
+  }
+
   // Apply case context if available and not yet applied
   if (window.NyayaState?.caseContext && !contextApplied && messages.length === 0) {
     contextApplied = true;
     const ctx = window.NyayaState.caseContext;
-    // Add system-like context message
     messages.push({
       role: 'user',
       content: `I've already analyzed my case. Here's the context:\n\n${ctx}\n\nPlease use this information to help me. What are my legal options?`
     });
-    // Immediately start streaming
     renderChatUI();
     streamResponse();
     return;
