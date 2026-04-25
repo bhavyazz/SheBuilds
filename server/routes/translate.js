@@ -87,6 +87,70 @@ translateRouter.post('/stream', async (req, res) => {
   }
 });
 
+translateRouter.post('/summarize', async (req, res) => {
+  const { text } = req.body;
+  if (!text || text.length < 20) return res.status(400).json({ error: 'Please provide at least a few sentences to summarize.' });
+
+  try {
+    const response = await groq.chat.completions.create({
+      model: MODEL,
+      messages: [
+        {
+          role: 'system',
+          content: `You are a legal document summarizer for Indian women. Summarize legal documents in plain, simple language that a non-lawyer can understand. Return ONLY valid JSON.`
+        },
+        {
+          role: 'user',
+          content: `Summarize this legal document in simple language. Identify all legal terms and explain them. Return JSON:
+{
+  "title": "Brief title of the document",
+  "document_type": "Type (e.g. FIR, Court Order, Complaint, Notice, Petition)",
+  "plain_summary": "3-5 sentence plain-language summary anyone can understand",
+  "key_points": ["Important point 1", "Important point 2", "Important point 3", "Important point 4", "Important point 5"],
+  "legal_terms": [{"term": "Legal term used", "meaning": "Simple explanation"}, {"term": "Another term", "meaning": "Simple explanation"}],
+  "action_required": "What the person needs to do next, if anything. Null if no action needed.",
+  "deadlines": ["Any deadlines mentioned"],
+  "parties_involved": ["Party 1 - role", "Party 2 - role"],
+  "severity": "informational|important|urgent|critical"
+}
+
+Document:
+${text.slice(0, 6000)}`
+        }
+      ],
+      max_tokens: 2000,
+      temperature: 0.2,
+    });
+
+    const raw = response.choices[0]?.message?.content || '';
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (match) {
+      res.json({ summary: JSON.parse(match[0]) });
+    } else {
+      res.json({ summary: { plain_summary: raw, key_points: [], legal_terms: [] } });
+    }
+  } catch (err) {
+    // Fallback on rate limit
+    if (err.status === 429 || (err.message && err.message.includes('429'))) {
+      try {
+        const fallback = await groq.chat.completions.create({
+          model: 'llama-3.1-8b-instant',
+          messages: [
+            { role: 'system', content: 'Summarize this legal document in simple language. Return ONLY valid JSON with keys: title, document_type, plain_summary, key_points (array), legal_terms (array of {term, meaning}), action_required, severity.' },
+            { role: 'user', content: text.slice(0, 4000) }
+          ],
+          max_tokens: 1500,
+          temperature: 0.2,
+        });
+        const raw = fallback.choices[0]?.message?.content || '';
+        const match = raw.match(/\{[\s\S]*\}/);
+        if (match) return res.json({ summary: JSON.parse(match[0]) });
+      } catch (e2) { /* fall through */ }
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
 translateRouter.get('/languages', (_req, res) => {
   res.json(SUPPORTED_LANGS);
 });
