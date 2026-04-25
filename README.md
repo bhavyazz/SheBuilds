@@ -85,7 +85,7 @@ NyayaSaathi eliminates these barriers through accessible, AI-driven legal suppor
 ## How It Works
 
 1. The user describes her legal situation in natural language.
-2. Claude identifies the relevant legal domain and applicable laws.
+2. System identifies the relevant legal domain and applicable laws.
 3. NyayaSaathi explains her rights in clear, simple terms.
 4. A personalized step-by-step legal roadmap is generated.
 5. Verified legal aid organizations and helplines are recommended.
@@ -112,10 +112,9 @@ NyayaSaathi Response:
 ## Technology Stack
 
 - Frontend: React.js + Tailwind CSS
-- AI Model: Claude Sonnet 4 (claude-sonnet-4-20250514)
+- AI Model: Groq and Ollama
 - Backend: Node.js
 - API: Anthropic Messages API
-- Deployment: Vercel
 - Legal Database: Curated Indian laws and verified resources
 
 ---
