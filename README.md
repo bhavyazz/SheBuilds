@@ -19,7 +19,7 @@ Every woman deserves to know her rights — not someday, not after hiring a lawy
 
 NyayaSaathi is an AI-powered legal assistant designed to make Indian law understandable, accessible, and actionable for women across India.
 
-Women often face legal issues without knowing their rights, the relevant laws, or where to seek help. NyayaSaathi bridges this gap by offering instant, plain-language legal guidance powered by Claude Sonnet 4.
+Women often face legal issues without knowing their rights, the relevant laws, or where to seek help. NyayaSaathi bridges this gap by offering instant, plain-language legal guidance.
 
 A user simply describes her situation in natural language. NyayaSaathi then:
 
