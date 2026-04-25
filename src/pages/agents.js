@@ -10,6 +10,7 @@ const CASE_TABS = [
   { id: 'strength', label: 'Case Strength', icon: 'S' },
   { id: 'precedents', label: 'Precedents', icon: 'P' },
   { id: 'timeline', label: 'Timeline', icon: 'T' },
+  { id: 'legalhelp', label: 'Legal Help', icon: 'L' },
   { id: 'evidence', label: 'Evidence', icon: 'E' },
 ];
 
@@ -176,6 +177,7 @@ function renderTabData(tab, data) {
     case 'strength': return renderStrength(data);
     case 'precedents': return renderPrecedents(data);
     case 'timeline': return renderTimeline(data);
+    case 'legalhelp': return renderLegalHelp(data);
     case 'evidence': return renderEvidence();
     default: return '<p>No data</p>';
   }
@@ -533,3 +535,94 @@ window._closePrecedent = () => {
   state.selectedPrecedent = null;
   render();
 };
+
+function renderLegalHelp(d) {
+  const typeColors = { government: '#059669', ngo: '#7c3aed', helpline: '#dc2626', platform: '#3b82f6', directory: '#6366f1', pro_bono: '#059669' };
+  const costColors = { free: '#059669', affordable: '#d97706', paid: '#6b7280' };
+
+  return `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
+      <span style="font-size:0.78rem;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:#7c3aed;">Legal Help & Resources</span>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;">
+      <div style="padding:14px;background:#f9fafb;border-radius:10px;border:1px solid #f3f4f6;">
+        <p style="font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#9ca3af;margin-bottom:4px;">Case Category</p>
+        <p style="font-size:0.88rem;font-weight:700;color:#111827;">${d.case_category || 'Legal Issue'}</p>
+      </div>
+      <div style="padding:14px;background:#f9fafb;border-radius:10px;border:1px solid #f3f4f6;">
+        <p style="font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#9ca3af;margin-bottom:4px;">Lawyer Type Needed</p>
+        <p style="font-size:0.88rem;font-weight:700;color:#111827;">${d.lawyer_type_needed || 'General'}</p>
+      </div>
+    </div>
+
+    ${d.safety_note ? `<div style="padding:14px;background:#fef2f2;border:1px solid #fecaca;border-radius:12px;margin-bottom:20px;display:flex;align-items:start;gap:10px;">
+      <span style="font-size:1.2rem;">⚠️</span>
+      <p style="font-size:0.82rem;color:#991b1b;line-height:1.5;font-weight:500;">${d.safety_note}</p>
+    </div>` : ''}
+
+    ${(d.free_legal_aid || []).length ? `
+      <div style="margin-bottom:24px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+          <div style="width:28px;height:28px;border-radius:8px;background:#059669;color:white;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:0.7rem;">F</div>
+          <span style="font-size:0.72rem;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:#059669;">Free Legal Aid & Support</span>
+        </div>
+        <div style="display:grid;gap:12px;">
+          ${d.free_legal_aid.map(a => {
+            const tc = typeColors[a.type] || '#6b7280';
+            return `<div style="padding:18px;border:1px solid #e5e7eb;border-radius:14px;border-left:4px solid ${tc};background:white;">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <p style="font-size:0.92rem;font-weight:700;color:#111827;">${a.name}</p>
+                  ${a.women_friendly ? '<span style="font-size:0.55rem;font-weight:700;padding:2px 8px;border-radius:10px;background:#f0fdf4;color:#059669;border:1px solid #bbf7d0;">WOMEN-FRIENDLY</span>' : ''}
+                </div>
+                <span style="font-size:0.55rem;font-weight:700;padding:2px 8px;border-radius:10px;background:${tc}12;color:${tc};text-transform:uppercase;">${a.type}</span>
+              </div>
+              <p style="font-size:0.78rem;color:#4b5563;line-height:1.5;margin-bottom:8px;">${a.why_relevant || ''}</p>
+              ${(a.services || []).length ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">${a.services.map(s => `<span style="font-size:0.62rem;font-weight:600;padding:3px 10px;border-radius:8px;background:#f3f4f6;color:#374151;">${s}</span>`).join('')}</div>` : ''}
+              ${a.contact ? `<div style="padding:8px 12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;"><p style="font-size:0.72rem;color:#166534;font-weight:600;">📞 ${a.contact}</p></div>` : ''}
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+    ` : ''}
+
+    ${(d.lawyer_platforms || []).length ? `
+      <div style="margin-bottom:24px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+          <div style="width:28px;height:28px;border-radius:8px;background:#3b82f6;color:white;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:0.7rem;">P</div>
+          <span style="font-size:0.72rem;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:#3b82f6;">Verified Lawyer Platforms</span>
+        </div>
+        <div style="display:grid;gap:12px;">
+          ${d.lawyer_platforms.map(p => {
+            const tc = typeColors[p.type] || '#6b7280';
+            const cc = costColors[p.cost] || '#6b7280';
+            return `<div style="padding:18px;border:1px solid #e5e7eb;border-radius:14px;border-left:4px solid ${tc};background:white;">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                <p style="font-size:0.92rem;font-weight:700;color:#111827;">${p.name}</p>
+                <div style="display:flex;gap:4px;">
+                  <span style="font-size:0.55rem;font-weight:700;padding:2px 8px;border-radius:10px;background:${tc}12;color:${tc};text-transform:uppercase;">${p.type}</span>
+                  <span style="font-size:0.55rem;font-weight:700;padding:2px 8px;border-radius:10px;background:${cc}12;color:${cc};text-transform:uppercase;">${p.cost || 'paid'}</span>
+                </div>
+              </div>
+              <p style="font-size:0.78rem;color:#4b5563;line-height:1.5;margin-bottom:8px;">${p.why_relevant || ''}</p>
+              ${(p.services || []).length ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">${p.services.map(s => `<span style="font-size:0.62rem;font-weight:600;padding:3px 10px;border-radius:8px;background:#eff6ff;color:#1d4ed8;">${s}</span>`).join('')}</div>` : ''}
+              ${p.access ? `<div style="padding:8px 12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;"><p style="font-size:0.72rem;color:#1e40af;font-weight:600;">🔗 ${p.access}</p></div>` : ''}
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+    ` : ''}
+
+    ${(d.immediate_steps || []).length ? `
+      <div style="margin-bottom:16px;">
+        <p style="font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#d97706;margin-bottom:10px;">What To Do Now</p>
+        ${d.immediate_steps.map((s, i) => `<div style="display:flex;align-items:start;gap:10px;margin-bottom:10px;">
+          <span style="width:24px;height:24px;border-radius:50%;background:#fef3c7;border:1px solid #fde68a;display:flex;align-items:center;justify-content:center;font-size:0.65rem;font-weight:800;color:#d97706;flex-shrink:0;">${i + 1}</span>
+          <p style="font-size:0.82rem;color:#374151;line-height:1.5;">${s}</p>
+        </div>`).join('')}
+      </div>
+    ` : ''}
+  `;
+}
+

@@ -3,6 +3,23 @@ import groq, { MODEL } from '../groq.js';
 
 export const agentsRouter = Router();
 
+const FALLBACK_MODEL = 'llama-3.1-8b-instant';
+
+/* ── Smart groq caller: auto-falls back to 8b on 429 ─────────────────── */
+async function groqCall(params) {
+  try {
+    return await groq.chat.completions.create({ ...params, model: MODEL });
+  } catch (e) {
+    if (e.status === 429 || (e.message && e.message.includes('429'))) {
+      console.warn(`[Rate limit] Falling back to ${FALLBACK_MODEL}`);
+      await new Promise(r => setTimeout(r, 1500)); // small breather
+      return await groq.chat.completions.create({ ...params, model: FALLBACK_MODEL });
+    }
+    throw e;
+  }
+}
+
+
 /* ── Legal Domain Agent Pool ─────────────────────────────────────────── */
 const AGENT_POOL = {
   legal: {
@@ -121,6 +138,33 @@ async function analyzeTab(tabType, caseDescription, courtType) {
   "critical_deadlines": ["deadline 1 - why it matters"],
   "fast_track_options": ["option to speed up the process"]
 }`,
+    legalhelp: `Act as a legal research assistant for women in India. Based on the case, recommend trustworthy legal help options. Prioritize FREE legal aid first, then verified platforms. Do NOT invent fake lawyer names. Return JSON:
+{
+  "case_category": "The type of legal issue (e.g. Domestic Violence, Workplace Harassment, Property Dispute)",
+  "lawyer_type_needed": "What specialization is needed (e.g. Family/Criminal Lawyer, Labour Lawyer)",
+  "free_legal_aid": [
+    {
+      "name": "Organization name (e.g. NALSA, State Legal Services Authority, specific NGO)",
+      "type": "government|ngo|helpline",
+      "why_relevant": "Why this is relevant to this specific case",
+      "services": ["What they provide - e.g. free lawyer, FIR help, shelter"],
+      "contact": "Phone number, website, or how to access",
+      "women_friendly": true
+    }
+  ],
+  "lawyer_platforms": [
+    {
+      "name": "Platform name (e.g. LawRato, Vakil Search, Bar Council directory)",
+      "type": "platform|directory|pro_bono",
+      "why_relevant": "Why this platform is suitable for this case",
+      "services": ["consultation", "court representation", "document drafting"],
+      "access": "Website URL or how to use",
+      "cost": "free|affordable|paid"
+    }
+  ],
+  "immediate_steps": ["Step 1: What to do right now", "Step 2: Next action"],
+  "safety_note": "Any safety considerations for the user"
+}`,
   };
 
   const prompt = tabPrompts[tabType];
@@ -146,8 +190,7 @@ Return JSON:\n{\n  "court": "${courtName}",\n  "phases": [{"phase": "Phase name"
   }
 
   try {
-    const response = await groq.chat.completions.create({
-      model: MODEL,
+    const response = await groqCall({
       messages: [
         { role: 'system', content: 'You are an expert Indian legal analyst. Analyze the case and respond with ONLY valid JSON. Be specific, cite real Indian laws and sections.' },
         { role: 'user', content: `Case: "${caseDescription}"\n\n${finalPrompt}` }
@@ -170,50 +213,20 @@ Return JSON:\n{\n  "court": "${courtName}",\n  "phases": [{"phase": "Phase name"
   return { _error: 'AI returned no usable data. Please try again.' };
 }
 
-/* ── Agent Debate: agents argue with each other ──────────────────────── */
+/* ── Agent Debate: multi-round with agreements + conflicts ────────────── */
 async function runDebate(caseDescription, findings) {
   const agentSummaries = findings.map(f =>
-    `${f.emoji} ${f.agent_name} (${f.domain}): ${f.stance}\nKey: ${(f.key_insights || []).join('; ')}`
+    `${f.agent_name} (${f.domain}): ${f.stance}\nInsights: ${(f.key_insights || []).join('; ')}\nPrediction: ${f.prediction || 'N/A'}`
   ).join('\n\n');
 
   try {
-    const response = await groq.chat.completions.create({
-      model: MODEL,
+    const response = await groqCall({
       messages: [
-        { role: 'system', content: 'You are a debate moderator analyzing disagreements between legal expert agents. Return ONLY valid JSON.' },
-        { role: 'user', content: `Case: "${caseDescription}"
-
-Expert Analyses:
-${agentSummaries}
-
-Identify conflicts and cross-domain causal chains. Return JSON:
-{
-  "conflicts": [
-    {
-      "agent_a": "domain_name",
-      "agent_b": "domain_name",
-      "claim_a": "What agent A argues",
-      "claim_b": "What agent B argues",
-      "severity": "low|moderate|critical",
-      "incompatibility": "Root cause of disagreement"
-    }
-  ],
-  "cross_domain_chains": [
-    {
-      "chain": [
-        {"domain": "domain1", "claim": "First cause"},
-        {"domain": "domain2", "claim": "This leads to"},
-        {"domain": "domain3", "claim": "Which ultimately causes"}
+        { role: 'system', content: 'You moderate a multi-round debate between expert agents analyzing a legal case. Generate rich, substantive exchanges where agents genuinely engage with each other\'s points. Return ONLY valid JSON.' },
+        { role: 'user', content: `Case: "${caseDescription}"\n\nExpert Analyses:\n${agentSummaries}\n\nGenerate a DEEP multi-round debate. Each agent must respond to others\' specific claims. Include agreements AND conflicts. Return JSON:\n{\n  "relationships": [\n    {"from": "domain_a", "to": "domain_b", "type": "agrees|conflicts|supports|challenges", "reason": "why this relationship exists"}\n  ],\n  "rounds": [\n    {\n      "round": 1,\n      "title": "Opening Arguments",\n      "exchanges": [\n        {"agent": "domain_name", "says": "Agent's argument (2-3 sentences, specific and substantive)", "responds_to": null},\n        {"agent": "domain_name", "says": "Response challenging or supporting previous point", "responds_to": "domain_name"}\n      ]\n    },\n    {\n      "round": 2,\n      "title": "Rebuttals & Deeper Analysis",\n      "exchanges": [{"agent": "domain", "says": "Rebuttal with evidence", "responds_to": "domain"}]\n    },\n    {\n      "round": 3,\n      "title": "Resolution & Synthesis",\n      "exchanges": [{"agent": "domain", "says": "Final position considering all arguments", "responds_to": null}]\n    }\n  ],\n  "conflicts": [{"agent_a": "domain", "agent_b": "domain", "claim_a": "position", "claim_b": "opposing position", "severity": "low|moderate|critical", "incompatibility": "root cause"}],\n  "cross_domain_chains": [{"chain": [{"domain": "d1", "claim": "cause"}], "non_obvious_insight": "what this reveals"}],\n  "consensus_points": ["point 1", "point 2", "point 3"],\n  "blind_spots": ["gap 1", "gap 2"]\n}\n\nIMPORTANT: Generate at least 3 rounds with 3-4 exchanges each. Every agent should speak at least twice. Arguments must reference specific laws, facts, or other agents\' claims.` }
       ],
-      "non_obvious_insight": "What this chain reveals that no single agent could see"
-    }
-  ],
-  "consensus_points": ["Where all agents agree"],
-  "blind_spots": ["What no agent addressed"]
-}` }
-      ],
-      max_tokens: 2000,
-      temperature: 0.4,
+      max_tokens: 3000,
+      temperature: 0.5,
     });
 
     const raw = response.choices[0]?.message?.content || '';
@@ -221,39 +234,33 @@ Identify conflicts and cross-domain causal chains. Return JSON:
     if (match) return JSON.parse(match[0]);
   } catch (e) { console.error('Debate error:', e.message); }
 
-  return { conflicts: [], cross_domain_chains: [], consensus_points: [], blind_spots: [] };
+  return { relationships: [], rounds: [], conflicts: [], cross_domain_chains: [], consensus_points: [], blind_spots: [] };
 }
 
-/* ── Meta Agent: select relevant domains ─────────────────────────────── */
+/* ── Meta Agent: always deploy ALL 6 expert agents ──────────────────── */
 async function selectDomains(caseDescription) {
+  // Always use all 6 agents for comprehensive analysis
+  const allAgents = Object.keys(AGENT_POOL);
+  let reasoning = 'All 6 expert agents deployed for comprehensive multi-perspective analysis covering legal, financial, psychological, social, human rights, and procedural dimensions.';
+
   try {
-    const response = await groq.chat.completions.create({
-      model: MODEL,
+    const response = await groqCall({
       messages: [{
         role: 'system',
-        content: 'You select which expert agents to activate for a legal case. Return ONLY valid JSON.'
+        content: 'You explain why all expert agents are relevant to a legal case. Return ONLY valid JSON.'
       }, {
         role: 'user',
-        content: `Given this case description, select 3-5 most relevant agents from: legal, financial, psychology, social, rights, procedural.
-
-Case: "${caseDescription}"
-
-Return JSON: {"agents": ["agent1", "agent2", "agent3"], "reasoning": "why these agents"}`
+        content: `Case: "${caseDescription}"\n\nAll 6 agents (legal, financial, psychology, social, rights, procedural) will analyze this case. Explain briefly why each is relevant.\n\nReturn JSON: {"reasoning": "2-3 sentence explanation of why comprehensive coverage matters for this case"}`
       }],
-      max_tokens: 300,
+      max_tokens: 200,
       temperature: 0.3,
     });
-
     const raw = response.choices[0]?.message?.content || '';
     const match = raw.match(/\{[\s\S]*\}/);
-    if (match) {
-      const data = JSON.parse(match[0]);
-      const valid = (data.agents || []).filter(a => AGENT_POOL[a]);
-      if (valid.length >= 2) return { agents: valid.slice(0, 5), reasoning: data.reasoning || '' };
-    }
+    if (match) { reasoning = JSON.parse(match[0]).reasoning || reasoning; }
   } catch (e) { console.error('Meta agent error:', e.message); }
 
-  return { agents: ['legal', 'psychology', 'procedural'], reasoning: 'Default agents selected for broad coverage.' };
+  return { agents: allAgents, reasoning };
 }
 
 /* ── Run single agent ────────────────────────────────────────────────── */
@@ -262,8 +269,7 @@ async function runAgent(domain, caseDescription) {
   if (!agent) return null;
 
   try {
-    const response = await groq.chat.completions.create({
-      model: MODEL,
+    const response = await groqCall({
       messages: [
         { role: 'system', content: agent.systemPrompt },
         { role: 'user', content: `Analyze this case from your expert perspective. Be specific, actionable, and cite relevant laws/resources.
@@ -315,8 +321,7 @@ async function synthesizeFindings(caseDescription, findings) {
   ).join('\n\n');
 
   try {
-    const response = await groq.chat.completions.create({
-      model: MODEL,
+    const response = await groqCall({
       messages: [{
         role: 'system',
         content: 'You synthesize multiple expert analyses into one clear, actionable summary. Be empathetic, clear, and practical. Return ONLY valid JSON.'
@@ -400,15 +405,15 @@ agentsRouter.post('/analyze', async (req, res) => {
       reasoning
     });
 
-    // Stage 2: Run agents in parallel
-    emit('stage', { stage: 'agents', message: `🧠 Deploying ${selectedDomains.length} expert agents...` });
-    const agentPromises = selectedDomains.map(async (domain) => {
+    // Stage 2: Run agents sequentially with small delay to avoid TPM limits
+    emit('stage', { stage: 'agents', message: `Deploying ${selectedDomains.length} expert agents...` });
+    const findings = [];
+    for (const domain of selectedDomains) {
       emit('agent_start', { domain, name: AGENT_POOL[domain]?.name, emoji: AGENT_POOL[domain]?.emoji });
       const finding = await runAgent(domain, caseDescription);
-      emit('agent_complete', { domain, finding });
-      return finding;
-    });
-    const findings = (await Promise.all(agentPromises)).filter(Boolean);
+      if (finding) { findings.push(finding); emit('agent_complete', { domain, finding }); }
+      await new Promise(r => setTimeout(r, 800)); // stagger to respect TPM limits
+    }
 
     // Stage 3: Agent debate
     emit('stage', { stage: 'debate', message: '⚔️ Agents debating and finding conflicts...' });
